@@ -1146,13 +1146,13 @@ void load_convolutional_weights_binary(layer l, FILE *fp)
 #endif
 }
 
-void load_convolutional_weights(layer l, FILE *fp)
+void load_convolutional_weights(layer l, FILE *fp, int first_layer)
 {
     if(l.binary){
         //load_convolutional_weights_binary(l, fp);
         //return;
     }
-    int num = l.nweights;
+    int num_of_weights = l.nweights;
     fread(l.biases, sizeof(float), l.n, fp);
     if (l.batch_normalize && (!l.dontloadscales)){
         fread(l.scales, sizeof(float), l.n, fp);
@@ -1185,8 +1185,39 @@ void load_convolutional_weights(layer l, FILE *fp)
             printf("\n");
         }
     }
-    fread(l.weights, sizeof(float), num, fp);
-    //if(l.c == 3) scal_cpu(num, 1./256, l.weights, 1);
+
+    if(first_layer==1){
+
+        fread(l.tmp_weights, sizeof(float), num_of_weights * 3, fp);
+
+        float *red_weight, *green_weight, *blue_weight;
+        red_weight = calloc(num_of_weights, sizeof(float));
+        green_weight = calloc(num_of_weights, sizeof(float));
+        blue_weight = calloc(num_of_weights, sizeof(float));
+
+        size_t input_per_sam = l.size * l.size;
+
+        // Convert 3-channel input to 1-channel weights
+        size_t i, j;
+
+        for (i = 0; i < l.n; ++i){
+            for (j = 0; j < input_per_sam; ++j){
+                memcpy(red_weight + i*input_per_sam + j, l.tmp_weights + i*3*input_per_sam+j, sizeof(float));
+                memcpy(green_weight + i*input_per_sam + j, l.tmp_weights + (i*3+1)*input_per_sam+j, sizeof(float));
+                memcpy(blue_weight + i*input_per_sam + j, l.tmp_weights + (i*3+2)*input_per_sam+j, sizeof(float));
+                l.weights[i * input_per_sam + j] = (float)(0.2989 * red_weight[i * input_per_sam + j] +
+                                                           0.5870 * green_weight[i * input_per_sam + j] +
+                                                           0.1140 * blue_weight[i * input_per_sam + j]);
+            }
+        }
+
+        free(red_weight);
+        free(green_weight);
+        free(blue_weight);
+        free(l.tmp_weights);
+    }else {
+        fread(l.weights, sizeof(float), num_of_weights, fp);
+    }
     if (l.flipped) {
         transpose_matrix(l.weights, l.c*l.size*l.size, l.n);
     }
@@ -1206,6 +1237,11 @@ void load_weights_upto(network *net, char *filename, int start, int cutoff)
         cuda_set_device(net->gpu_index);
     }
 #endif
+    int first_layer;
+    if((net->c==1) && (net->weight_c == 3))
+        first_layer = 1;
+    else
+        first_layer = 0;
     fprintf(stderr, "Loading weights from %s...", filename);
     fflush(stdout);
     FILE *fp = fopen(filename, "rb");
@@ -1231,7 +1267,12 @@ void load_weights_upto(network *net, char *filename, int start, int cutoff)
         layer l = net->layers[i];
         if (l.dontload) continue;
         if(l.type == CONVOLUTIONAL || l.type == DECONVOLUTIONAL){
-            load_convolutional_weights(l, fp);
+            if(first_layer){
+                load_convolutional_weights(l, fp, 1);
+                first_layer = 0;
+            }
+            else
+                load_convolutional_weights(l, fp, 0);
         }
         if(l.type == CONNECTED){
             load_connected_weights(l, fp, transpose);
@@ -1240,9 +1281,9 @@ void load_weights_upto(network *net, char *filename, int start, int cutoff)
             load_batchnorm_weights(l, fp);
         }
         if(l.type == CRNN){
-            load_convolutional_weights(*(l.input_layer), fp);
-            load_convolutional_weights(*(l.self_layer), fp);
-            load_convolutional_weights(*(l.output_layer), fp);
+            load_convolutional_weights(*(l.input_layer), fp, 0);
+            load_convolutional_weights(*(l.self_layer), fp, 0);
+            load_convolutional_weights(*(l.output_layer), fp, 0);
         }
         if(l.type == RNN){
             load_connected_weights(*(l.input_layer), fp, transpose);

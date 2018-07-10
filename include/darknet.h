@@ -234,6 +234,7 @@ struct layer{
     float * scales;
     float * scale_updates;
 
+    float * tmp_weights; // Just for first layer input
     float * weights;
     float * weight_updates;
 
@@ -461,6 +462,7 @@ typedef struct network{
     int truths;
     int notruth;
     int h, w, c;
+    int weight_c;
     int max_crop;
     int min_crop;
     float max_ratio;
@@ -549,6 +551,7 @@ typedef struct load_args{
     char *path;
     int n;
     int m;
+    int channel;
     char **labels;
     int h;
     int w;

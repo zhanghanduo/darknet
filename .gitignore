@@ -15,7 +15,7 @@ opencv/
 convnet/
 decaf/
 submission/
-cfg/
+weights/
 darknet
 .fuse*
 
@@ -25,3 +25,12 @@ ehthumbs.db
 Icon?
 Thumbs.db
 *.swp
+
+.idea/
+.vscode/
+*.weights
+backup/*
+
+*.so
+*.a
+obj/

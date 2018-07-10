@@ -37,6 +37,7 @@ load_args get_base_args(network *net)
     load_args args = {0};
     args.w = net->w;
     args.h = net->h;
+    args.channel = net->c;
     args.size = net->w;
 
     args.min = net->min_crop;

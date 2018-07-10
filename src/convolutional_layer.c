@@ -192,6 +192,7 @@ convolutional_layer make_convolutional_layer(int batch, int h, int w, int c, int
     l.pad = padding;
     l.batch_normalize = batch_normalize;
 
+    l.tmp_weights = calloc(c*3/groups*n*size*size, sizeof(float));
     l.weights = calloc(c/groups*n*size*size, sizeof(float));
     l.weight_updates = calloc(c/groups*n*size*size, sizeof(float));
 

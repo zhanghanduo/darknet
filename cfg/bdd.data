@@ -1,0 +1,5 @@
+train  = /media/hd/Dataset/bdd100k/bdd-data/train.txt
+valid  = /media/hd/Dataset/bdd100k/bdd-data/val.txt
+names = data/bdd.names
+backup = backup
+gpus  = 0

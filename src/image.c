@@ -1314,16 +1314,27 @@ void exposure_image(image im, float sat)
 
 void distort_image(image im, float hue, float sat, float val)
 {
-    rgb_to_hsv(im);
-    scale_image_channel(im, 1, sat);
-    scale_image_channel(im, 2, val);
-    int i;
-    for(i = 0; i < im.w*im.h; ++i){
-        im.data[i] = im.data[i] + hue;
-        if (im.data[i] > 1) im.data[i] -= 1;
-        if (im.data[i] < 0) im.data[i] += 1;
+    if(im.c == 3) {
+        rgb_to_hsv(im);
+        scale_image_channel(im, 1, sat);
+        scale_image_channel(im, 2, val);
+        int i;
+        for (i = 0; i < im.w * im.h; ++i) {
+            im.data[i] = im.data[i] + hue;
+            if (im.data[i] > 1) im.data[i] -= 1;
+            if (im.data[i] < 0) im.data[i] += 1;
+        }
+        hsv_to_rgb(im);
+    } else if(im.c == 1){
+        int i, j;
+        for(j = 0; j < im.h; ++j){
+            for(i = 0; i < im.w; ++i){
+                float pix = im.data[j*im.w + i];
+                pix = pix*val;
+                im.data[j*im.w + i] = pix;
+            }
+        }
     }
-    hsv_to_rgb(im);
     constrain_image(im);
 }
 
