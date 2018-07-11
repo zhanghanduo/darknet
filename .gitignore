@@ -33,5 +33,5 @@ bdd100k/
 .idea/
 .vscode/
 *.weights
-
-
+results/
+backup/
