@@ -435,6 +435,80 @@ void draw_detections(image im, int num, float thresh, box *boxes, float **probs,
     }
 }
 
+void draw_detections_simple(image im, detection *dets, int num, float thresh, char **names, image **alphabet, int classes)
+{
+    int i,j;
+
+    for(i = 0; i < num; ++i){
+        char labelstr[4096] = {0};
+        int class = -1;
+        for(j = 0; j < classes; ++j){
+            if (dets[i].prob[j] > thresh){
+                if (class < 0) {
+                    strcat(labelstr, names[j]);
+                    class = j;
+                } else {
+                    strcat(labelstr, ", ");
+                    strcat(labelstr, names[j]);
+                }
+                printf("%s: %.0f%%\n", names[j], dets[i].prob[j]*100);
+            }
+        }
+        if(class >= 0){
+            int width = im.h * .006;
+
+            /*
+               if(0){
+               width = pow(prob, 1./2.)*10+1;
+               alphabet = 0;
+               }
+             */
+
+            //printf("%d %s: %.0f%%\n", i, names[class], prob*100);
+            int offset = class*123457 % classes;
+            float red = get_color(2,offset,classes);
+            float green = get_color(1,offset,classes);
+            float blue = get_color(0,offset,classes);
+            float rgb[3];
+
+            //width = prob*20+2;
+
+            rgb[0] = red;
+            rgb[1] = green;
+            rgb[2] = blue;
+            box b = dets[i].bbox;
+            //printf("%f %f %f %f\n", b.x, b.y, b.w, b.h);
+
+            int left  = (b.x-b.w/2.)*im.w;
+            int right = (b.x+b.w/2.)*im.w;
+            int top   = (b.y-b.h/2.)*im.h;
+            int bot   = (b.y+b.h/2.)*im.h;
+
+            if(left < 0) left = 0;
+            if(right > im.w-1) right = im.w-1;
+            if(top < 0) top = 0;
+            if(bot > im.h-1) bot = im.h-1;
+
+            draw_box_width(im, left, top, right, bot, width, red, green, blue);
+            if (alphabet) {
+                image label = get_label(alphabet, labelstr, (im.h*.03));
+                draw_label(im, top + width, left, label, rgb);
+                free_image(label);
+            }
+            if (dets[i].mask){
+                image mask = float_to_image(14, 14, 1, dets[i].mask);
+                image resized_mask = resize_image(mask, b.w*im.w, b.h*im.h);
+                image tmask = threshold_image(resized_mask, .5);
+                embed_image(tmask, im, left, top);
+                free_image(mask);
+                free_image(resized_mask);
+                free_image(tmask);
+            }
+        }
+    }
+}
+
+
 #ifdef OPENCV
 
 void draw_detections_cv_v3(IplImage* show_img, detection *dets, int num, float thresh, char **names, image **alphabet, int classes, int ext_output)
@@ -548,6 +622,9 @@ void draw_detections_cv_v3(IplImage* show_img, detection *dets, int num, float t
 			cvPutText(show_img, labelstr, pt_text, &font, black_color);
 		}
 	}
+	if (ext_output) {
+        fflush(stdout);
+    }
 }
 
 void draw_detections_cv(IplImage* show_img, int num, float thresh, box *boxes, float **probs, char **names, image **alphabet, int classes)
@@ -933,23 +1010,32 @@ void show_image(image p, const char *name)
 
 #ifdef OPENCV
 
-image ipl_to_image(IplImage* src)
+void ipl_into_image(IplImage* src, image im)
 {
     unsigned char *data = (unsigned char *)src->imageData;
     int h = src->height;
     int w = src->width;
     int c = src->nChannels;
     int step = src->widthStep;
-    image out = make_image(w, h, c);
-    int i, j, k, count=0;;
+    int i, j, k;
 
-    for(k= 0; k < c; ++k){
-        for(i = 0; i < h; ++i){
+    for(i = 0; i < h; ++i){
+        for(k= 0; k < c; ++k){
             for(j = 0; j < w; ++j){
-                out.data[count++] = data[i*step + j*c + k]/255.;
+                im.data[k*w*h + i*w + j] = data[i*step + j*c + k]/255.;
             }
         }
     }
+}
+
+image ipl_to_image(IplImage* src)
+{
+    unsigned char *data = (unsigned char *)src->imageData;
+    int h = src->height;
+    int w = src->width;
+    int c = src->nChannels;
+    image out = make_image(w, h, c);
+    ipl_into_image(src, out);
     return out;
 }
 

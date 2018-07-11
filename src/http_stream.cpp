@@ -1,25 +1,11 @@
 #ifdef OPENCV
 //
 // a single-threaded, multi client(using select), debug webserver - streaming out mjpg.
-//  on win, _WIN32 has to be defined, must link against ws2_32.lib (socks on linux are for free)
 //
 
 //
 // socket related abstractions:
 //
-#ifdef _WIN32  
-#pragma comment(lib, "ws2_32.lib")
-#include <winsock.h>
-#include <windows.h>
-#include <time.h>
-#define PORT        unsigned long
-#define ADDRPOINTER   int*
-struct _INIT_W32DATA
-{
-	WSADATA w;
-	_INIT_W32DATA() { WSAStartup(MAKEWORD(2, 1), &w); }
-} _init_once;
-#else       /* ! win32 */
 #include <unistd.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -35,7 +21,6 @@ struct _INIT_W32DATA
 #define ADDRPOINTER  unsigned int*
 #define INVALID_SOCKET -1
 #define SOCKET_ERROR   -1
-#endif /* _WIN32 */
 
 #include <cstdio>
 #include <vector>

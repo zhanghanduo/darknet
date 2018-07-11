@@ -14,8 +14,7 @@ convnet/
 decaf/
 submission/
 cfg/
-build/darknet/*
-!build/darknet/YoloWrapper.cs
+build/*
 .fuse*
 
 # OS Generated #
@@ -28,3 +27,11 @@ Thumbs.db
 # CMake #
 cmake-build-debug/
 CMakeLists.txt
+
+obj/
+bdd100k/
+.idea/
+.vscode/
+*.weights
+
+

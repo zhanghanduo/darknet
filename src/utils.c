@@ -5,13 +5,8 @@
 #include <assert.h>
 #include <float.h>
 #include <limits.h>
-#ifdef WIN32
-#include "unistd.h"
-#include "gettimeofday.h"
-#else
 #include <unistd.h>
 #include <sys/time.h>
-#endif
 #include "utils.h"
 
 #pragma warning(disable: 4996)
