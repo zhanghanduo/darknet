@@ -409,13 +409,21 @@ float *get_network_output_layer_gpu(network net, int i)
 {
     layer l = net.layers[i];
     if(l.type != REGION) cuda_pull_array(l.output_gpu, l.output, l.outputs*l.batch);
+    // TODO: output features extraction
+//    int size_of_array = sizeof(l.output); // /sizeof(l.output[0]);
+//
+//    for (int ii=0; ii < size_of_array; ii++){
+//        printf("%lf\n", l.output[ii]);
+//    }
+//    printf("output array size: %d\n\n", size_of_array);
     return l.output;
 }
 
 float *get_network_output_gpu(network net)
 {
     int i;
-    for(i = net.n-1; i > 0; --i) if(net.layers[i].type != COST) break;
+    for(i = net.n-2; i > 0; --i) if(net.layers[i].type != COST) break;
+    // Normally get the last layer output
     return get_network_output_layer_gpu(net, i);
 }
 

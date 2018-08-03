@@ -275,6 +275,7 @@ int compare_by_probs(const void *a_ptr, const void *b_ptr) {
 	return delta < 0 ? -1 : delta > 0 ? 1 : 0;
 }
 
+// ext_output = 0 means quiet, =1 means output class and prob, =2 means outpu verbose.
 void draw_detections_v3(image im, detection *dets, int num, float thresh, char **names, image **alphabet, int classes, int ext_output)
 {
 	int selected_detections_num;
@@ -285,18 +286,21 @@ void draw_detections_v3(image im, detection *dets, int num, float thresh, char *
 	int i;
 	for (i = 0; i < selected_detections_num; ++i) {
 		const int best_class = selected_detections[i].best_class;
-		printf("%s: %.0f%%", names[best_class],	selected_detections[i].det.prob[best_class] * 100);
-		if (ext_output)
+//		printf("%s: %.0f%%", names[best_class],	selected_detections[i].det.prob[best_class] * 100);
+		if (ext_output == 2) {
+			printf("%s: %.0f%%", names[best_class],	selected_detections[i].det.prob[best_class] * 100);
 			printf("\t(left_x: %4.0f   top_y: %4.0f   width: %4.0f   height: %4.0f)\n",
-				(selected_detections[i].det.bbox.x - selected_detections[i].det.bbox.w / 2)*im.w,
-				(selected_detections[i].det.bbox.y - selected_detections[i].det.bbox.h / 2)*im.h,
-				selected_detections[i].det.bbox.w*im.w, selected_detections[i].det.bbox.h*im.h);
-		else
-			printf("\n");
-		int j;
-		for (j = 0; j < classes; ++j) {
-			if (selected_detections[i].det.prob[j] > thresh && j != best_class) {
-				printf("%s: %.0f%%\n", names[j], selected_detections[i].det.prob[j] * 100);
+				   (selected_detections[i].det.bbox.x - selected_detections[i].det.bbox.w / 2) * im.w,
+				   (selected_detections[i].det.bbox.y - selected_detections[i].det.bbox.h / 2) * im.h,
+				   selected_detections[i].det.bbox.w * im.w, selected_detections[i].det.bbox.h * im.h);
+		}
+		else if(ext_output == 1){
+			printf("%s: %.0f%%", names[best_class],	selected_detections[i].det.prob[best_class] * 100);
+			int j;
+			for (j = 0; j < classes; ++j) {
+				if (selected_detections[i].det.prob[j] > thresh && j != best_class) {
+					printf("%s: %.0f%%\n", names[j], selected_detections[i].det.prob[j] * 100);
+				}
 			}
 		}
 	}
@@ -941,7 +945,49 @@ void rgbgr_image(image im)
 }
 
 #ifdef OPENCV
-void show_image_cv(image p, const char *name)
+void show_image_cv(image p, const char *name, IplImage *disp)
+{
+    int x,y,k;
+    image copy = copy_image(p);
+    constrain_image(copy);
+    if(p.c == 3) rgbgr_image(copy);
+    //normalize_image(copy);
+
+    char buff[256];
+    //sprintf(buff, "%s (%d)", name, windows);
+    sprintf(buff, "%s", name);
+
+//    IplImage *disp = cvCreateImage(cvSize(p.w,p.h), IPL_DEPTH_8U, p.c);
+    int step = disp->widthStep;
+    cvNamedWindow(buff, CV_WINDOW_NORMAL); 
+    //cvMoveWindow(buff, 100*(windows%10) + 200*(windows/10), 100*(windows%10));
+    ++windows;
+    for(y = 0; y < p.h; ++y){
+        for(x = 0; x < p.w; ++x){
+            for(k= 0; k < p.c; ++k){
+                disp->imageData[y*step + x*p.c + k] = (unsigned char)(get_pixel(copy,x,y,k)*255);
+            }
+        }
+    }
+    free_image(copy);
+    if(0){
+        int w = 448;
+        int h = w*p.h/p.w;
+        if(h > 1000){
+            h = 1000;
+            w = h*p.w/p.h;
+        }
+        IplImage *buffer = disp;
+        disp = cvCreateImage(cvSize(w, h), buffer->depth, buffer->nChannels);
+        cvResize(buffer, disp, CV_INTER_LINEAR);
+        cvReleaseImage(&buffer);
+    }
+    cvShowImage(buff, disp);
+
+//    cvReleaseImage(&disp);
+}
+
+void show_image_cv_without_ipl(image p, const char *name)
 {
     int x,y,k;
     image copy = copy_image(p);
@@ -955,7 +1001,7 @@ void show_image_cv(image p, const char *name)
 
     IplImage *disp = cvCreateImage(cvSize(p.w,p.h), IPL_DEPTH_8U, p.c);
     int step = disp->widthStep;
-    cvNamedWindow(buff, CV_WINDOW_NORMAL); 
+    cvNamedWindow(buff, CV_WINDOW_NORMAL);
     //cvMoveWindow(buff, 100*(windows%10) + 200*(windows/10), 100*(windows%10));
     ++windows;
     for(y = 0; y < p.h; ++y){
@@ -983,7 +1029,6 @@ void show_image_cv(image p, const char *name)
     cvReleaseImage(&disp);
 }
 
-
 void show_image_cv_ipl(IplImage *disp, const char *name)
 {
 	if (disp == NULL) return;
@@ -1001,7 +1046,7 @@ void show_image_cv_ipl(IplImage *disp, const char *name)
 void show_image(image p, const char *name)
 {
 #ifdef OPENCV
-    show_image_cv(p, name);
+    show_image_cv_without_ipl(p, name);
 #else
     fprintf(stderr, "Not compiled with OpenCV, saving to %s.png instead\n", name);
     save_image(p, name);

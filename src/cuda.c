@@ -169,6 +169,17 @@ void cuda_free(float *x_gpu)
     check_error(status);
 }
 
+/// cudaMemcpyAsync:
+//  cudaError_t cudaMemcpyAsync	(	void * 	        dst,
+//                                  const void *    src,
+//                                  size_t 	        count,
+//                                  enum cudaMemcpyKind  kind,
+//                                  cudaStream_t    stream
+//)
+// copy count bytes from memory pointed to src to memory pointed to dst
+
+/// <summary>push: copy memory area to GPU memory</summary>
+/// <returns>No return</returns>
 void cuda_push_array(float *x_gpu, float *x, size_t n)
 {
     size_t size = sizeof(float)*n;
@@ -177,6 +188,8 @@ void cuda_push_array(float *x_gpu, float *x, size_t n)
     check_error(status);
 }
 
+/// <summary>pull: copy GPU memory to memory area</summary>
+/// <returns>No return</returns>
 void cuda_pull_array(float *x_gpu, float *x, size_t n)
 {
     size_t size = sizeof(float)*n;
