@@ -26,7 +26,7 @@ OS := $(shell uname)
 # GTX 1080, GTX 1070, GTX 1060, GTX 1050, GTX 1030, Titan Xp, Tesla P40, Tesla P4
 # ARCH= -gencode arch=compute_61,code=sm_61 -gencode arch=compute_61,code=compute_61
 
-# GP100/Tesla P100 – DGX-1
+# GP100/Tesla P100 ï¿½ DGX-1
 # ARCH= -gencode arch=compute_60,code=sm_60
 
 # For Jetson TX1, Tegra X1, DRIVE CX, DRIVE PX - uncomment:
@@ -57,7 +57,7 @@ ifeq ($(DEBUG), 1)
 OPTS= -O0 -g
 else
 ifeq ($(AVX), 1) 
-CFLAGS+= -ffp-contract=fast -mavx -msse4.1 -msse4a
+CFLAGS+= -ffp-contract=fast -mavx -mavx2 -msse3 -msse4.1 -msse4.2 -msse4a
 endif
 endif
 

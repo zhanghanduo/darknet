@@ -853,16 +853,18 @@ void calculate_binary_weights(network net)
     int j;
     for (j = 0; j < net.n; ++j) {
         layer *l = &net.layers[j];
+
         if (l->type == CONVOLUTIONAL) {
             //printf(" Merges Convolutional-%d and batch_norm \n", j);
+
             if (l->xnor) {
                 //printf("\n %d \n", j);
-                size_t ldb_align = 256; // 256bit for AVX2
-                if (l->size*l->size*l->c > 4096) ldb_align = 4096;
+                l->lda_align = 256; // 256bit for AVX2
 
-                binary_align_weights(l, ldb_align);
+                binary_align_weights(l);
             }
         }
     }
     //printf("\n calculate_binary_weights Done! \n");
+
 }
