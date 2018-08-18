@@ -481,7 +481,12 @@ void draw_detections_simple(image im, detection *dets, int num, float thresh, ch
             rgb[1] = green;
             rgb[2] = blue;
             box b = dets[i].bbox;
-            //printf("%f %f %f %f\n", b.x, b.y, b.w, b.h);
+			b.w = (b.w < 1) ? b.w : 1;
+			b.h = (b.h < 1) ? b.h : 1;
+			b.x = (b.x < 1) ? b.x : 1;
+			b.y = (b.y < 1) ? b.y : 1;
+
+			//printf("%f %f %f %f\n", b.x, b.y, b.w, b.h);
 
             int left  = (b.x-b.w/2.)*im.w;
             int right = (b.x+b.w/2.)*im.w;

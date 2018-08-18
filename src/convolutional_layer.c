@@ -249,8 +249,8 @@ void cudnn_convolutional_setup(layer *l, int cudnn_preference)
 		if (l->bf_algo == CUDNN_CONVOLUTION_BWD_FILTER_ALGO_WINOGRAD_NONFUSED) bf = 2;
 			//printf("Tensor Cores - Backward-filter enabled: l->bf_algo = CUDNN_CONVOLUTION_BWD_FILTER_ALGO_WINOGRAD_NONFUSED \n");
 
-		if (fw == 2 && bd == 2 && bf == 2) printf("TF ");
-		else if (fw == 1 && bd == 1 && bf == 1) printf("TH ");
+		//if (fw == 2 && bd == 2 && bf == 2) printf("TF ");
+		//else if (fw == 1 && bd == 1 && bf == 1) printf("TH ");
 	}
 }
 #endif
@@ -543,6 +543,73 @@ void backward_bias(float *bias_updates, float *delta, int batch, int n, int size
     }
 }
 
+void gemm_nn_custom(int M, int N, int K, float ALPHA,
+                    float *A, int lda,
+                    float *B, int ldb,
+                    float *C, int ldc)
+{
+    int i, j, k;
+    for (i = 0; i < M; ++i) {
+        for (k = 0; k < K; ++k) {
+            register float A_PART = ALPHA*A[i*lda + k];
+            //printf("\n weight = %f \n", A_PART);
+            for (j = 0; j < N; ++j) {
+                C[i*ldc + j] += A_PART*B[k*ldb + j];
+            }
+        }
+    }
+}
+void get_mean_array(float *src, size_t size, size_t filters, float *mean_arr) {
+    size_t i, counter;
+    counter = 0;
+    for (i = 0; i < size; i += size / filters) {
+        mean_arr[counter++] = fabs(src[i]);
+    }
+}
+/*
+void float_to_bit(float *src, unsigned char *dst, size_t size) {
+    size_t dst_size = size / 8 + 1;
+   memset(dst, 0, dst_size);
+   size_t i, dst_i, dst_shift;
+   for (i = 0; i < size; ++i) {
+       if (src[i] > 0) set_bit(dst, i);
+   }
+}
+*/
+void bit_to_float(unsigned char *src, float *dst, size_t size, size_t filters, float *mean_arr) {
+    memset(dst, 0, size *sizeof(float));
+    size_t i,  src_i, src_shift;
+    for (i = 0; i < size; ++i) {
+        float mean_val = 1;
+        if(mean_arr != NULL) mean_val = fabs(mean_arr[i / (size / filters)]);
+        if(get_bit(src, i)) dst[i] = mean_val;
+        else dst[i] = -mean_val;
+    }
+}
+void binary_transpose_align_weights(convolutional_layer *l, size_t ldb_align)
+{
+    int m = l->n;
+    int k = l->size*l->size*l->c;
+    size_t new_ldb = k + (ldb_align - k%ldb_align); // (k / 8 + 1) * 8;
+    binarize_weights(l->weights, m, k, l->binary_weights);
+    size_t align_weights_size = new_ldb * m;
+    size_t align_bit_weights_size = align_weights_size / 8;// +1;
+    float *align_weights = calloc(align_weights_size, sizeof(float));
+    l->align_bit_weights = calloc(align_bit_weights_size, sizeof(char));
+    size_t i, j;
+    // align A without transpose
+    for (i = 0; i < m; ++i) {
+        for (j = 0; j < k; ++j) {
+            align_weights[i*new_ldb + j] = l->binary_weights[i*k + j];
+        }
+    }
+    float_to_bit(align_weights, l->align_bit_weights, align_weights_size);
+    l->mean_arr = calloc(l->n, sizeof(float));
+    get_mean_array(align_weights, align_weights_size, l->n, l->mean_arr);
+    free(align_weights);
+}
+
+
 void forward_convolutional_layer(convolutional_layer l, network_state state)
 {
     int out_h = convolutional_out_height(l);
@@ -552,7 +619,10 @@ void forward_convolutional_layer(convolutional_layer l, network_state state)
     fill_cpu(l.outputs*l.batch, 0, l.output, 1);
 
     if(l.xnor){
-        binarize_weights(l.weights, l.n, l.c*l.size*l.size, l.binary_weights);
+        if (!l.align_bit_weights) {
+            binarize_weights(l.weights, l.n, l.c*l.size*l.size, l.binary_weights);
+            //printf("\n binarize_weights l.align_bit_weights = %p \n", l.align_bit_weights);
+        }
         swap_binary(&l);
         binarize_cpu(state.input, l.c*l.h*l.w*l.batch, l.binary_input);
         state.input = l.binary_input;
@@ -567,10 +637,94 @@ void forward_convolutional_layer(convolutional_layer l, network_state state)
     float *b = state.workspace;
     float *c = l.output;
 
+    static int u = 0;
+    u++;
+
     for(i = 0; i < l.batch; ++i){
         im2col_cpu(state.input, l.c, l.h, l.w, 
                 l.size, l.stride, l.pad, b);
-        gemm(0,0,m,n,k,1,a,k,b,n,1,c,n);
+//        gemm(0,0,m,n,k,1,a,k,b,n,1,c,n);
+        if (l.xnor) {
+            size_t output_size = l.outputs;
+            //float *count_output = calloc(output_size, sizeof(float));
+            //size_t bit_output_size = output_size / 8 + 1;
+            //char *bit_output = calloc(bit_output_size, sizeof(char));
+            size_t intput_size = n * k; // (out_h*out_w) X (l.size*l.size*l.c) : after im2col()
+            size_t bit_input_size = intput_size / 8 + 1;
+            //char *bit_input = calloc(bit_input_size, sizeof(char));
+            size_t weights_size = k * m; //l.size*l.size*l.c*l.n;
+            size_t bit_weights_size = weights_size / 8 + 1;
+            //char *bit_weights = calloc(bit_weights_size, sizeof(char));
+            //float *mean_arr = calloc(l.n, sizeof(float));
+            // test: float->bit->float
+            //get_mean_array(l.weights, weights_size, l.n, mean_arr);
+            //float_to_bit(l.weights, bit_weights, weights_size);
+            //memset(l.weights, 0, weights_size * sizeof(float));
+            //bit_to_float(bit_weights, l.weights, weights_size, l.n, mean_arr); // just for test float->bit->float
+            //float_to_bit(b, bit_input, intput_size);
+            //memset(b, 0, intput_size * sizeof(float));
+            //bit_to_float(bit_input, b, intput_size, 1, NULL); // just for test float->bit->float
+            // transpose B from NxK to KxN (x-axis (ldb = l.size*l.size*l.c) - should be multiple of 8 bits)
+            {
+                size_t ldb_align = 256;// 8;
+                if (k > 4096)ldb_align = 4096;
+                size_t new_ldb = k + (ldb_align - k%ldb_align); // (k / 8 + 1) * 8;
+                size_t t_intput_size = new_ldb * n;
+                size_t t_bit_input_size = t_intput_size / 8;// +1;
+                float *t_input = calloc(t_intput_size, sizeof(float));
+                char *t_bit_input = calloc(t_bit_input_size, sizeof(char));
+                //printf("\n bit_input_size = %d, n = %d, k = %d, ldb = %d \n", bit_input_size, n, k, n);
+                //printf("\n t_bit_input_size = %d, k = %d, n = %d, new_ldb = %d \n", t_bit_input_size, k, n, new_ldb);
+                //printf("\n align_weights_size = %d, k = %d, m = %d, lda = %d \n", align_weights_size, k, m, k);
+                //printf("\n align_bit_weights_size = %d, k = %d, m = %d, new_lda = %d \n", align_bit_weights_size, k, m, new_ldb);
+                // transpose and align B
+                int i, j;
+                for (i = 0; i < n; ++i) {
+                    for (j = 0; j < k; ++j) {
+                        t_input[i*new_ldb + j] = b[j*n + i];
+                    }
+                }
+                float_to_bit(t_input, t_bit_input, t_intput_size);
+                if (!l.align_bit_weights)
+                {
+                    size_t align_weights_size = new_ldb * m;
+                    size_t align_bit_weights_size = align_weights_size / 8;// +1;
+                    float *align_weights = calloc(align_weights_size, sizeof(float));
+                    l.align_bit_weights = calloc(align_bit_weights_size, sizeof(char));
+                    // align A without transpose
+                    for (i = 0; i < m; ++i) {
+                        for (j = 0; j < k; ++j) {
+                            align_weights[i*new_ldb + j] = a[i*k + j];
+                        }
+                    }
+                    float_to_bit(align_weights, l.align_bit_weights, align_weights_size);
+                    l.mean_arr = calloc(l.n, sizeof(float));
+                    get_mean_array(align_weights, align_weights_size, l.n, l.mean_arr);
+                    free(align_weights);
+                }
+                gemm_nn_custom_bin_mean_transposed(m, n, k, 1, l.align_bit_weights, new_ldb, t_bit_input, new_ldb, c, n, l.mean_arr);
+                //gemm_nn_custom_bin_mean_transposed(m, n, k, 1, bit_weights, k, t_bit_input, new_ldb, c, n, mean_arr);
+                free(t_input);
+                free(t_bit_input);
+                //free(align_bit_weights);
+            }
+            // for bit_input: (k * n)
+            //if (u == 8) gemm_nn_custom_bin_mean(m, n, k, 1, bit_weights, k, bit_input, n, c, n, mean_arr);  // last xnor layer
+            //else gemm_nn_custom_bin_mean(m, n, k, 1, bit_weights, k, bit_input, n, c, n, NULL);
+            //gemm_nn_custom_bin_mean(m, n, k, 1, bit_weights, k, bit_input, n, c, n, mean_arr);
+            //printf("\n u = %d \n", u);
+            //gemm_nn_custom(m, n, k, 1, a, k, b, n, c, n);
+            //int j;
+            //if (u != 8) for (j = 0; j < l.n; ++j) l.biases[j] = l.biases[j] / (mean_arr[j]*2);
+            //free(count_output);
+            //free(bit_input);
+            //free(bit_weights);
+            //free(mean_arr);
+        }
+        else {
+            gemm(0, 0, m, n, k, 1, a, k, b, n, 1, c, n);
+            // bit-count to float
+        }
         c += n*m;
         state.input += l.c*l.h*l.w;
     }

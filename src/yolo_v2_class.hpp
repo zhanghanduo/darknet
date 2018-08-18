@@ -49,6 +49,8 @@ extern "C" YOLODLL_API int init(const char *configurationFilename, const char *w
 extern "C" YOLODLL_API int detect_image(const char *filename, bbox_t_container &container);
 extern "C" YOLODLL_API int detect_mat(const uint8_t* data, const size_t data_length, bbox_t_container &container);
 extern "C" YOLODLL_API int dispose();
+extern "C" YOLODLL_API int get_device_count();
+extern "C" YOLODLL_API int get_device_name(int gpu, char
 
 class Detector {
 	std::shared_ptr<void> detector_gpu_ptr;
@@ -94,9 +96,13 @@ public:
 	std::shared_ptr<image_t> mat_to_image_resize(cv::Mat mat) const
 	{
 		if (mat.data == NULL) return std::shared_ptr<image_t>(NULL);
-		cv::Mat det_mat;
-		cv::resize(mat, det_mat, cv::Size(get_net_width(), get_net_height()));
-		return mat_to_image(det_mat);
+        cv::Size network_size = cv::Size(get_net_width(), get_net_height());
+        cv::Mat det_mat;
+        if (mat.size() != network_size)
+            cv::resize(mat, det_mat, network_size);
+        else
+            det_mat = mat;  // only reference is copied
+         return mat_to_image(det_mat);
 	}
 
 	static std::shared_ptr<image_t> mat_to_image(cv::Mat img_src)
