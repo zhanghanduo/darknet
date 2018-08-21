@@ -275,7 +275,7 @@ int compare_by_probs(const void *a_ptr, const void *b_ptr) {
 	return delta < 0 ? -1 : delta > 0 ? 1 : 0;
 }
 
-// ext_output = 0 means quiet, =1 means output class and prob, =2 means outpu verbose.
+// ext_output = 0 means quiet, =1 means output class and prob, =2 means output verbose.
 void draw_detections_v3(image im, detection *dets, int num, float thresh, char **names, image **alphabet, int classes, int ext_output)
 {
 	int selected_detections_num;

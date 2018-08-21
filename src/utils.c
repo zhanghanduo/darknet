@@ -200,8 +200,23 @@ void find_replace_extension(char *str, char *orig, char *rep, char *output)
 	free(buffer);
 }
 
+void trim(char *str)
+{
+    char *buffer = calloc(8192, sizeof(char));
+    sprintf(buffer, "%s", str);
+    char *p = buffer;
+    while (*p == ' ' || *p == '\t') ++p;
+    char *end = p + strlen(p) - 1;
+    while (*end == ' ' || *end == '\t') {
+        *end = '\0';
+        --end;
+    }
+    sprintf(str, "%s", p);
+    free(buffer);
+}
+
+
 void replace_image_to_label(char *input_path, char *output_path) {
-	//find_replace(input_path, "/images/", "/labels/", output_path);	// COCO
 	find_replace(input_path, "/images/train2014/", "/labels/train2014/", output_path);	// COCO
 	find_replace(output_path, "/images/val2014/", "/labels/val2014/", output_path);		// COCO
 	find_replace(output_path, "/JPEGImages/", "/labels/", output_path);	// PascalVOC
@@ -213,6 +228,8 @@ void replace_image_to_label(char *input_path, char *output_path) {
 
 	//find_replace(output_path, "/raw/", "/labels/", output_path);
 
+    trim(output_path);
+    
 	// replace only ext of files
 	find_replace_extension(output_path, ".jpg", ".txt", output_path);
 	find_replace_extension(output_path, ".JPG", ".txt", output_path); // error
