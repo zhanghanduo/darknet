@@ -25,6 +25,9 @@ void float_to_bit(float *src, unsigned char *dst, size_t size);
 void transpose_block_SSE4x4(float *A, float *B, const int n, const int m,
                             const int lda, const int ldb, const int block_size);
 
+void transpose_bin(char *A, char *B, const int n, const int m,
+                   const int lda, const int ldb, const int block_size);
+
 void gemm_nn_custom_bin_mean_transposed(int M, int N, int K, float ALPHA_UNUSED,
                                         unsigned char *A, int lda,
                                         unsigned char *B, int ldb,
@@ -33,6 +36,14 @@ void gemm_nn_custom_bin_mean_transposed(int M, int N, int K, float ALPHA_UNUSED,
 void im2col_cpu_custom(float* data_im,
                        int channels, int height, int width,
                        int ksize, int stride, int pad, float* data_col);
+
+void im2col_cpu_custom_align(float* data_im,
+                             int channels, int height, int width,
+                             int ksize, int stride, int pad, float* data_col, int bit_align);
+
+void im2col_cpu_custom_bin(float* data_im,
+                           int channels, int height, int width,
+                           int ksize, int stride, int pad, float* data_col, int bit_align);
 
 void im2col_cpu_custom_transpose(float* data_im,
                                  int channels, int height, int width,
@@ -45,6 +56,9 @@ void gemm_bin(int M, int N, int K, float ALPHA,
               char  *A, int lda,
               float *B, int ldb,
               float *C, int ldc);
+
+void forward_maxpool_layer_avx(float *src, float *dst, int *indexes, int size, int w, int h, int out_w, int out_h, int c,
+                               int pad, int stride, int batch);
 
 void gemm(int TA, int TB, int M, int N, int K, float ALPHA,
           float *A, int lda,
