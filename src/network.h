@@ -1,4 +1,3 @@
-// Oh boy, why am I about to do this....
 #ifndef NETWORK_H
 #define NETWORK_H
 
@@ -21,7 +20,7 @@ typedef struct network{
     float *workspace;
     int n;
     int batch;
-	int *seen;
+    int *seen;
     float epoch;
     int subdivisions;
     float momentum;
@@ -58,20 +57,22 @@ typedef struct network{
     float exposure;
     float saturation;
     float hue;
-	int small_object;
+    int small_object;
 
     int gpu_index;
     tree *hierarchy;
 
-    #ifdef GPU
+#ifdef GPU
+    float *input_state_gpu;
+
     float **input_gpu;
     float **truth_gpu;
-	float **input16_gpu;
-	float **output16_gpu;
-	size_t *max_input16_size;
-	size_t *max_output16_size;
-	int wait_stream;
-    #endif
+    float **input16_gpu;
+    float **output16_gpu;
+    size_t *max_input16_size;
+    size_t *max_output16_size;
+    int wait_stream;
+#endif
 } network;
 
 typedef struct network_state {
@@ -152,9 +153,9 @@ int get_network_nuisance(network net);
 int get_network_background(network net);
 YOLODLL_API void fuse_conv_batchnorm(network net);
 YOLODLL_API void calculate_binary_weights(network net);
+
 #ifdef __cplusplus
 }
 #endif
 
 #endif
-

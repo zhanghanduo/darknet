@@ -40,40 +40,55 @@ extern "C" {
 #include "opencv2/highgui/highgui_c.h"
 #endif
 
+#include "http_stream.h"
+
 float * get_network_output_gpu_layer(network net, int i);
 float * get_network_delta_gpu_layer(network net, int i);
 float * get_network_output_gpu(network net);
 
 void forward_network_gpu(network net, network_state state)
 {
+    //cudaDeviceSynchronize();
+    //printf("\n");
     state.workspace = net.workspace;
     int i;
     for(i = 0; i < net.n; ++i){
         state.index = i;
         layer l = net.layers[i];
-        if(l.delta_gpu){
+        if(l.delta_gpu && state.train){
             fill_ongpu(l.outputs * l.batch, 0, l.delta_gpu, 1);
         }
+        //printf("%d - type: %d - ", i, l.type);
+        //start_timer();
         l.forward_gpu(l, state);
-		if(net.wait_stream)
-			cudaStreamSynchronize(get_cuda_stream());
+        //cudaDeviceSynchronize();
+        //stop_timer_and_show();
+
+        if(net.wait_stream)
+            cudaStreamSynchronize(get_cuda_stream());
         state.input = l.output_gpu;
+        //cudaDeviceSynchronize();
 /*
-		cuda_pull_array(l.output_gpu, l.output, l.batch*l.outputs);
-		if (l.out_w >= 0 && l.out_h >= 1 && l.c >= 3) {
-			int j;
-			for (j = 0; j < l.out_c; ++j) {
-				image img = make_image(l.out_w, l.out_h, 3);
-				memcpy(img.data, l.output+ l.out_w*l.out_h*j, l.out_w*l.out_h * 1 * sizeof(float));
-				char buff[256];
-				sprintf(buff, "layer-%d slice-%d", i, j);
-				show_image(img, buff);
-			}
-			cvWaitKey(0); // wait press-key in console
-			cvDestroyAllWindows();
-		}
+        cuda_pull_array(l.output_gpu, l.output, l.batch*l.outputs);
+        if (l.out_w >= 0 && l.out_h >= 1 && l.c >= 3) {
+            int j;
+            for (j = 0; j < l.out_c; ++j) {
+                image img = make_image(l.out_w, l.out_h, 3);
+                memcpy(img.data, l.output + l.out_w*l.out_h*j, l.out_w*l.out_h * 1 * sizeof(float));
+                memcpy(img.data + l.out_w*l.out_h * 1, l.output + l.out_w*l.out_h*j, l.out_w*l.out_h * 1 * sizeof(float));
+                memcpy(img.data + l.out_w*l.out_h * 2, l.output + l.out_w*l.out_h*j, l.out_w*l.out_h * 1 * sizeof(float));
+                char buff[256];
+                sprintf(buff, "layer-%d slice-%d", i, j);
+                show_image(img, buff);
+                save_image(img, buff);
+            }
+            cvWaitKey(0); // wait press-key in console
+            cvDestroyAllWindows();
+        }
 */
     }
+    //cudaDeviceSynchronize();
+    //show_total_time();
 }
 
 void backward_network_gpu(network net, network_state state)
@@ -133,14 +148,14 @@ void forward_backward_network_gpu(network net, float *x, float *y)
     state.truth = *net.truth_gpu;
     state.train = 1;
 #ifdef CUDNN_HALF
-	int i;
-	for (i = 0; i < net.n; ++i) {
-		layer l = net.layers[i];
-		cuda_convert_f32_to_f16(l.weights_gpu, l.c*l.n*l.size*l.size, l.weights_gpu16);
-	}
+    int i;
+    for (i = 0; i < net.n; ++i) {
+        layer l = net.layers[i];
+        cuda_convert_f32_to_f16(l.weights_gpu, l.c*l.n*l.size*l.size, l.weights_gpu16);
+    }
 #endif
     forward_network_gpu(net, state);
-	//cudaStreamSynchronize(get_cuda_stream());
+    //cudaStreamSynchronize(get_cuda_stream());
     backward_network_gpu(net, state);
 }
 
@@ -409,39 +424,32 @@ float *get_network_output_layer_gpu(network net, int i)
 {
     layer l = net.layers[i];
     if(l.type != REGION) cuda_pull_array(l.output_gpu, l.output, l.outputs*l.batch);
-    // TODO: output features extraction
-//    int size_of_array = sizeof(l.output); // /sizeof(l.output[0]);
-//
-//    for (int ii=0; ii < size_of_array; ii++){
-//        printf("%lf\n", l.output[ii]);
-//    }
-//    printf("output array size: %d\n\n", size_of_array);
     return l.output;
 }
 
 float *get_network_output_gpu(network net)
 {
     int i;
-    for(i = net.n-2; i > 0; --i) if(net.layers[i].type != COST) break;
-    // Normally get the last layer output
+    for(i = net.n-1; i > 0; --i) if(net.layers[i].type != COST) break;
     return get_network_output_layer_gpu(net, i);
 }
 
 float *network_predict_gpu(network net, float *input)
 {
-	if (net.gpu_index != cuda_get_device())
-		cuda_set_device(net.gpu_index);
+    if (net.gpu_index != cuda_get_device())
+        cuda_set_device(net.gpu_index);
     int size = get_network_input_size(net) * net.batch;
     network_state state;
     state.index = 0;
     state.net = net;
-    state.input = cuda_make_array(input, size);
+    //state.input = cuda_make_array(input, size);   // memory will be allocated in the parse_network_cfg_custom()
+    state.input = net.input_state_gpu;
+    cuda_push_array(state.input, input, size);
     state.truth = 0;
     state.train = 0;
     state.delta = 0;
     forward_network_gpu(net, state);
     float *out = get_network_output_gpu(net);
-    cuda_free(state.input);
+    //cuda_free(state.input);   // will be freed in the free_network()
     return out;
 }
-

@@ -11,12 +11,14 @@ static inline void set_bit(unsigned char *const dst, size_t index) {
     size_t dst_i = index / 8;
     int dst_shift = index % 8;
     dst[dst_i] |= 1 << dst_shift;
+    //dst[dst_i] |= 1 << (8 - dst_shift);
 }
 
 static inline unsigned char get_bit(unsigned char const*const src, size_t index) {
     size_t src_i = index / 8;
     int src_shift = index % 8;
     unsigned char val = (src[src_i] & (1 << src_shift)) > 0;
+    //unsigned char val = (src[src_i] & (1 << (8 - src_shift))) > 0;
     return val;
 }
 
@@ -57,8 +59,10 @@ void gemm_bin(int M, int N, int K, float ALPHA,
               float *B, int ldb,
               float *C, int ldc);
 
+
 void forward_maxpool_layer_avx(float *src, float *dst, int *indexes, int size, int w, int h, int out_w, int out_h, int c,
                                int pad, int stride, int batch);
+
 
 void gemm(int TA, int TB, int M, int N, int K, float ALPHA,
           float *A, int lda,

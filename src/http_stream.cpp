@@ -1,11 +1,27 @@
+#include "http_stream.h"
+
 #ifdef OPENCV
 //
 // a single-threaded, multi client(using select), debug webserver - streaming out mjpg.
+//  on win, _WIN32 has to be defined, must link against ws2_32.lib (socks on linux are for free)
 //
 
 //
 // socket related abstractions:
 //
+#ifdef _WIN32
+#pragma comment(lib, "ws2_32.lib")
+#include <winsock.h>
+#include <windows.h>
+#include <time.h>
+#define PORT        unsigned long
+#define ADDRPOINTER   int*
+struct _INIT_W32DATA
+{
+    WSADATA w;
+    _INIT_W32DATA() { WSAStartup(MAKEWORD(2, 1), &w); }
+} _init_once;
+#else       /* ! win32 */
 #include <unistd.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -21,10 +37,12 @@
 #define ADDRPOINTER  unsigned int*
 #define INVALID_SOCKET -1
 #define SOCKET_ERROR   -1
+#endif /* _WIN32 */
 
 #include <cstdio>
 #include <vector>
 #include <iostream>
+#include <algorithm>
 using std::cerr;
 using std::endl;
 
@@ -37,7 +55,6 @@ using std::endl;
 #endif
 using namespace cv;
 
-#include "http_stream.h"
 #include "image.h"
 
 
@@ -58,9 +75,9 @@ class MJPGWriter
 public:
 
 	MJPGWriter(int port = 0, int _timeout = 200000, int _quality = 30)
-		: sock(INVALID_SOCKET)
-		, timeout(_timeout)
-		, quality(_quality)
+			: sock(INVALID_SOCKET)
+			, timeout(_timeout)
+			, quality(_quality)
 	{
 		FD_ZERO(&master);
 		if (port)
@@ -87,7 +104,7 @@ public:
 		SOCKADDR_IN address;
 		address.sin_addr.s_addr = INADDR_ANY;
 		address.sin_family = AF_INET;
-		address.sin_port = htons(port);	// ::htons(port);
+		address.sin_port = htons(port);    // ::htons(port);
 		if (::bind(sock, (SOCKADDR*)&address, sizeof(SOCKADDR_IN)) == SOCKET_ERROR)
 		{
 			cerr << "error : couldn't bind sock " << sock << " to port " << port << "!" << endl;
@@ -123,18 +140,18 @@ public:
 		cv::imencode(".jpg", frame, outbuf, params);
 		size_t outlen = outbuf.size();
 
-#ifdef _WIN32 
+#ifdef _WIN32
 		for (unsigned i = 0; i<rread.fd_count; i++)
-		{
-			int addrlen = sizeof(SOCKADDR);
-			SOCKET s = rread.fd_array[i];    // fd_set on win is an array, while ...
-#else         
+        {
+            int addrlen = sizeof(SOCKADDR);
+            SOCKET s = rread.fd_array[i];    // fd_set on win is an array, while ...
+#else
 		for (int s = 0; s<=maxfd; s++)
 		{
 			socklen_t addrlen = sizeof(SOCKADDR);
 			if (!FD_ISSET(s, &rread))      // ... on linux it's a bitmask ;)
 				continue;
-#endif                   
+#endif
 			if (s == sock) // request on master socket, accept and send main header.
 			{
 				SOCKADDR_IN address = { 0 };
@@ -148,15 +165,15 @@ public:
 				FD_SET(client, &master);
 				_write(client, "HTTP/1.0 200 OK\r\n", 0);
 				_write(client,
-					"Server: Mozarella/2.2\r\n"
-					"Accept-Range: bytes\r\n"
-					"Connection: close\r\n"
-					"Max-Age: 0\r\n"
-					"Expires: 0\r\n"
-					"Cache-Control: no-cache, private\r\n"
-					"Pragma: no-cache\r\n"
-					"Content-Type: multipart/x-mixed-replace; boundary=mjpegstream\r\n"
-					"\r\n", 0);
+					   "Server: Mozarella/2.2\r\n"
+					   "Accept-Range: bytes\r\n"
+					   "Connection: close\r\n"
+					   "Max-Age: 0\r\n"
+					   "Expires: 0\r\n"
+					   "Cache-Control: no-cache, private\r\n"
+					   "Pragma: no-cache\r\n"
+					   "Content-Type: multipart/x-mixed-replace; boundary=mjpegstream\r\n"
+					   "\r\n", 0);
 				cerr << "new client " << client << endl;
 			}
 			else // existing client, just stream pix
@@ -218,7 +235,7 @@ IplImage* get_webcam_frame(CvCapture *cap) {
 	try {
 		cv::VideoCapture &cpp_cap = *(cv::VideoCapture *)cap;
 		cv::Mat frame;
-		if (cpp_cap.isOpened()) 
+		if (cpp_cap.isOpened())
 		{
 			cpp_cap >> frame;
 			IplImage tmp = frame;
@@ -238,11 +255,11 @@ int get_stream_fps_cpp(CvCapture *cap) {
 	int fps = 25;
 	try {
 		cv::VideoCapture &cpp_cap = *(cv::VideoCapture *)cap;
-#ifndef CV_VERSION_EPOCH	// OpenCV 3.x
+#ifndef CV_VERSION_EPOCH    // OpenCV 3.x
 		fps = cpp_cap.get(CAP_PROP_FPS);
-#else						// OpenCV 2.x
+#else                        // OpenCV 2.x
 		fps = cpp_cap.get(CV_CAP_PROP_FPS);
-#endif		
+#endif
 	}
 	catch (...) {
 		std::cout << " Can't get FPS of source videofile. For output video FPS = 25 by default. \n";
@@ -251,12 +268,12 @@ int get_stream_fps_cpp(CvCapture *cap) {
 }
 // ----------------------------------------
 extern "C" {
-	image ipl_to_image(IplImage* src);	// image.c
+image ipl_to_image(IplImage* src);    // image.c
 }
 
 image image_data_augmentation(IplImage* ipl, int w, int h,
-	int pleft, int ptop, int swidth, int sheight, int flip,
-	float jitter, float dhue, float dsat, float dexp)
+							  int pleft, int ptop, int swidth, int sheight, int flip,
+							  float jitter, float dhue, float dsat, float dexp)
 {
 	cv::Mat img = cv::cvarrToMat(ipl);
 
@@ -265,7 +282,7 @@ image image_data_augmentation(IplImage* ipl, int w, int h,
 	cv::Rect img_rect(cv::Point2i(0, 0), img.size());
 	cv::Rect new_src_rect = src_rect & img_rect;
 
-	cv::Rect dst_rect(cv::Point2i(std::max(0, -pleft), std::max(0, -ptop)), new_src_rect.size());
+	cv::Rect dst_rect(cv::Point2i(std::max<int>(0, -pleft), std::max<int>(0, -ptop)), new_src_rect.size());
 
 	cv::Mat cropped(cv::Size(src_rect.width, src_rect.height), img.type());
 	cropped.setTo(cv::Scalar::all(0));
@@ -278,7 +295,7 @@ image image_data_augmentation(IplImage* ipl, int w, int h,
 
 	// flip
 	if (flip) {
-		cv::flip(sized, cropped, 1);	// 0 - x-axis, 1 - y-axis, -1 - both axes (x & y)
+		cv::flip(sized, cropped, 1);    // 0 - x-axis, 1 - y-axis, -1 - both axes (x & y)
 		sized = cropped.clone();
 	}
 
@@ -287,8 +304,8 @@ image image_data_augmentation(IplImage* ipl, int w, int h,
 	if (ipl->nChannels >= 3)
 	{
 		cv::Mat hsv_src;
-		cvtColor(sized, hsv_src, CV_BGR2HSV);	// also BGR -> RGB
-	
+		cvtColor(sized, hsv_src, CV_BGR2HSV);    // also BGR -> RGB
+
 		std::vector<cv::Mat> hsv;
 		cv::split(hsv_src, hsv);
 
@@ -298,7 +315,7 @@ image image_data_augmentation(IplImage* ipl, int w, int h,
 
 		cv::merge(hsv, hsv_src);
 
-		cvtColor(hsv_src, sized, CV_HSV2RGB);	// now RGB instead of BGR
+		cvtColor(hsv_src, sized, CV_HSV2RGB);    // now RGB instead of BGR
 	}
 	else
 	{
@@ -313,4 +330,62 @@ image image_data_augmentation(IplImage* ipl, int w, int h,
 }
 
 
-#endif	// OPENCV
+#endif    // OPENCV
+
+// -----------------------------------------------------
+
+#if __cplusplus >= 201103L || _MSC_VER >= 1900  // C++11
+
+#include <chrono>
+#include <iostream>
+
+static std::chrono::steady_clock::time_point steady_start, steady_end;
+static double total_time;
+
+double get_time_point() {
+	std::chrono::steady_clock::time_point current_time = std::chrono::steady_clock::now();
+	//uint64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(current_time.time_since_epoch()).count();
+	return std::chrono::duration_cast<std::chrono::microseconds>(current_time.time_since_epoch()).count();
+}
+
+void start_timer() {
+	steady_start = std::chrono::steady_clock::now();
+}
+
+void stop_timer() {
+	steady_end = std::chrono::steady_clock::now();
+}
+
+double get_time() {
+	double took_time = std::chrono::duration<double>(steady_end - steady_start).count();
+	total_time += took_time;
+	return took_time;
+}
+
+void stop_timer_and_show() {
+	stop_timer();
+	std::cout << " " << get_time()*1000 << " msec" << std::endl;
+}
+
+void stop_timer_and_show_name(char *name) {
+	std::cout << " " << name;
+	stop_timer_and_show();
+}
+
+void show_total_time() {
+	std::cout << " Total: " << total_time * 1000 << " msec" << std::endl;
+}
+
+#else // C++11
+#include <iostream>
+
+double get_time_point() { return 0; }
+void start_timer() {}
+void stop_timer() {}
+double get_time() { return 0; }
+void stop_timer_and_show() {
+    std::cout << " stop_timer_and_show() isn't implemented " << std::endl;
+}
+void stop_timer_and_show_name(char *name) { stop_timer_and_show(); }
+void total_time() {}
+#endif // C++11
