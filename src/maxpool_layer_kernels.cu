@@ -37,7 +37,7 @@ __global__ void forward_maxpool_layer_kernel(int n, int in_h, int in_w, int in_c
             int cur_w = w_offset + j*stride + m;
             int index = cur_w + in_w*(cur_h + in_h*(k + b*in_c));
             int valid = (cur_h >= 0 && cur_h < in_h &&
-                    cur_w >= 0 && cur_w < in_w);
+                         cur_w >= 0 && cur_w < in_w);
             float val = (valid != 0) ? input[index] : -INFINITY;
             max_i = (val > max) ? index : max_i;
             max   = (val > max) ? val   : max;
@@ -77,7 +77,7 @@ __global__ void backward_maxpool_layer_kernel(int n, int in_h, int in_w, int in_
             int out_h = (i-h_offset)/stride + l;
             int out_index = out_w + w*(out_h + h*(k + c*b));
             int valid = (out_w >= 0 && out_w < w &&
-                     out_h >= 0 && out_h < h);
+                         out_h >= 0 && out_h < h);
             d += (valid && indexes[out_index] == index) ? delta[out_index] : 0;
         }
     }
@@ -86,6 +86,33 @@ __global__ void backward_maxpool_layer_kernel(int n, int in_h, int in_w, int in_
 
 extern "C" void forward_maxpool_layer_gpu(maxpool_layer layer, network_state state)
 {
+
+#ifdef CUDNN
+    if (!state.train) {// && layer.stride == layer.size) {
+        // cudnnPoolingBackward
+        cudnnStatus_t maxpool_status;
+
+        float alpha = 1, beta = 0;
+        maxpool_status = cudnnPoolingForward(
+            cudnn_handle(),
+            layer.poolingDesc,
+            &alpha,
+            layer.srcTensorDesc,
+            state.input,
+            &beta,
+            layer.dstTensorDesc,
+            layer.output_gpu);
+
+        //maxpool_status = cudnnDestroyPoolingDescriptor(poolingDesc);
+        //cudnnDestroyTensorDescriptor(layer.srcTensorDesc);
+        //cudnnDestroyTensorDescriptor(layer.dstTensorDesc);
+
+        return;
+    }
+#endif
+
+
+
     int h = layer.out_h;
     int w = layer.out_w;
     int c = layer.c;
