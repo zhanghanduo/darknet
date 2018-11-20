@@ -287,6 +287,84 @@ void gemm_nn_custom_bin_mean_transposed(int M, int N, int K, float ALPHA_UNUSED,
 
 //----------------------------
 
+// is not used
+void transpose_32x32_bits_my(uint32_t *A, uint32_t *B, int lda, int ldb)
+{
+    unsigned x, y, t;
+    for (y = 0; y < 32; ++y) {
+        for (x = 0; x < 32; ++x) {
+            if (A[y * lda] & (1 << x)) B[x * ldb] |= (uint32_t)1 << y;
+        }
+    }
+}
+
+uint8_t reverse_8_bit(uint8_t a) {
+    return ((a * 0x0802LU & 0x22110LU) | (a * 0x8020LU & 0x88440LU)) * 0x10101LU >> 16;
+}
+
+uint32_t reverse_32_bit(uint32_t a)
+{
+    // unsigned int __rbit(unsigned int val) // for ARM    //__asm__("rbit %0, %1\n" : "=r"(output) : "r"(input));
+    return (reverse_8_bit(a >> 24) << 0) |
+           (reverse_8_bit(a >> 16) << 8) |
+           (reverse_8_bit(a >> 8) << 16) |
+           (reverse_8_bit(a >> 0) << 24);
+}
+
+#define swap(a0, a1, j, m) t = (a0 ^ (a1 >>j)) & m; a0 = a0 ^ t; a1 = a1 ^ (t << j);
+
+void transpose32_optimized(uint32_t A[32]) {
+    int j, k;
+    unsigned m, t;
+
+    //m = 0x0000FFFF;
+    //for (j = 16; j != 0; j = j >> 1, m = m ^ (m << j)) {
+    //    for (k = 0; k < 32; k = (k + j + 1) & ~j) {
+    //        t = (A[k] ^ (A[k + j] >> j)) & m;
+    //        A[k] = A[k] ^ t;
+    //        A[k + j] = A[k + j] ^ (t << j);
+    //    }
+    //}
+
+    j = 16;
+    m = 0x0000FFFF;
+    for (k = 0; k < 32; k = (k + j + 1) & ~j) { swap(A[k], A[k + j], j, m); }
+
+    j = 8;
+    m = 0x00ff00ff;
+    for (k = 0; k < 32; k = (k + j + 1) & ~j) { swap(A[k], A[k + j], j, m); }
+
+    j = 4;
+    m = 0x0f0f0f0f;
+    for (k = 0; k < 32; k = (k + j + 1) & ~j) { swap(A[k], A[k + j], j, m); }
+
+    j = 2;
+    m = 0x33333333;
+    for (k = 0; k < 32; k = (k + j + 1) & ~j) { swap(A[k], A[k + j], j, m); }
+
+    j = 1;
+    m = 0x55555555;
+    for (k = 0; k < 32; k = (k + j + 1) & ~j) { swap(A[k], A[k + j], j, m); }
+
+    // reverse Y
+    for (j = 0; j < 16; ++j) {
+        uint32_t tmp = A[j];
+        A[j] = reverse_32_bit(A[31 - j]);
+        A[31 - j] = reverse_32_bit(tmp);
+    }
+}
+
+void transpose_32x32_bits_reversed_diagonale(uint32_t *A, uint32_t *B, int m, int n)
+{
+    unsigned A_tmp[32];
+    int i;
+#pragma unroll
+    for (i = 0; i < 32; ++i) A_tmp[i] = A[i * m];
+    transpose32_optimized(A_tmp);
+#pragma unroll
+    for (i = 0; i < 32; ++i) B[i*n] = A_tmp[i];
+}
+
 
 void transpose_8x8_bits_my(unsigned char *A, unsigned char *B, int lda, int ldb)
 {
@@ -321,13 +399,14 @@ unsigned char reverse_byte_3(unsigned char n) {
 }
 
 
-void transpose8rS32_reversed_diagonale(unsigned char* A, int m, int n, unsigned char* B)
+void transpose8rS32_reversed_diagonale(unsigned char* A, unsigned char* B, int m, int n)
 {
     unsigned x, y, t;
 
+    x = y = 0;
     // Load the array and pack it into x and y.
-    x = (A[0] << 24) | (A[m] << 16) | (A[2 * m] << 8) | A[3 * m];
-    y = (A[4 * m] << 24) | (A[5 * m] << 16) | (A[6 * m] << 8) | A[7 * m];
+    //x = (A[0] << 24) | (A[m] << 16) | (A[2 * m] << 8) | A[3 * m];
+    //y = (A[4 * m] << 24) | (A[5 * m] << 16) | (A[6 * m] << 8) | A[7 * m];
 
     t = (x ^ (x >> 7)) & 0x00AA00AA;  x = x ^ t ^ (t << 7);
     t = (y ^ (y >> 7)) & 0x00AA00AA;  y = y ^ t ^ (t << 7);
@@ -343,25 +422,51 @@ void transpose8rS32_reversed_diagonale(unsigned char* A, int m, int n, unsigned 
     B[3 * n] = reverse_byte(y >> 24);  B[2 * n] = reverse_byte(y >> 16);  B[1 * n] = reverse_byte(y >> 8);  B[0 * n] = reverse_byte(y);
 }
 
+/*
+// transpose by 8-bit
 void transpose_bin(char *A, char *B, const int n, const int m,
-                   const int lda, const int ldb, const int block_size)
+    const int lda, const int ldb, const int block_size)
 {
+    //printf("\n n = %d, ldb = %d \t\t m = %d, lda = %d \n", n, ldb, m, lda);
     int i;
-#pragma omp parallel for
+    #pragma omp parallel for
     for (i = 0; i < n; i += 8) {
         int j;
-        for (j = 0; j < m - 8; j += 8) {
+        for (j = 0; j < m; j += 8) {
             int a_index = i*lda + j;
             int b_index = j*ldb + i;
             //transpose_8x8_bits_my(&A[a_index/8], &B[b_index/8], lda/8, ldb/8);
-            transpose8rS32_reversed_diagonale(&A[a_index / 8], lda / 8, ldb / 8, &B[b_index / 8]);
+            transpose8rS32_reversed_diagonale(&A[a_index / 8], &B[b_index / 8], lda / 8, ldb / 8);
         }
         for (; j < m; ++j) {
             if (get_bit(A, i*lda + j)) set_bit(B, j*ldb + i);
         }
     }
 }
+*/
 
+
+// transpose by 32-bit
+void transpose_bin(uint32_t *A, uint32_t *B, const int n, const int m,
+                   const int lda, const int ldb, const int block_size)
+{
+    //printf("\n n = %d (n mod 32 = %d), m = %d (m mod 32 = %d) \n", n, n % 32, m, m % 32);
+    //printf("\n lda = %d (lda mod 32 = %d), ldb = %d (ldb mod 32 = %d) \n", lda, lda % 32, ldb, ldb % 32);
+    int i;
+#pragma omp parallel for
+    for (i = 0; i < n; i += 32) {
+        int j;
+        for (j = 0; j < m; j += 32) {
+            int a_index = i*lda + j;
+            int b_index = j*ldb + i;
+            transpose_32x32_bits_reversed_diagonale(&A[a_index / 32], &B[b_index / 32], lda / 32, ldb / 32);
+            //transpose_32x32_bits_my(&A[a_index/32], &B[b_index/32], lda/32, ldb/32);
+        }
+        for (; j < m; ++j) {
+            if (get_bit(A, i*lda + j)) set_bit(B, j*ldb + i);
+        }
+    }
+}
 //----------------------------
 
 
@@ -1593,6 +1698,25 @@ void convolution_2d(int w, int h, int ksize, int n, int c, int pad, int stride,
     }
 }
 
+static inline int popcnt_64(uint64_t val64) {
+#ifdef WIN32  // Windows
+    #ifdef _WIN64 // Windows 64-bit
+    int tmp_count = __popcnt64(val64);
+#else         // Windows 32-bit
+    int tmp_count = __popcnt(val64);
+    tmp_count += __popcnt(val64 >> 32);
+#endif
+#else   // Linux
+#ifdef __x86_64__  // Linux 64-bit
+    int tmp_count = __builtin_popcountll(val64);
+#else  // Linux 32-bit
+    int tmp_count = __builtin_popcount(val64);
+    tmp_count += __builtin_popcount(val64);
+#endif
+#endif
+    return tmp_count;
+}
+
 void gemm_nn_custom_bin_mean_transposed(int M, int N, int K, float ALPHA_UNUSED,
                                         unsigned char *A, int lda,
                                         unsigned char *B, int ldb,
@@ -1613,11 +1737,7 @@ void gemm_nn_custom_bin_mean_transposed(int M, int N, int K, float ALPHA_UNUSED,
                 uint64_t b_bit64 = *((uint64_t *)(B + (j*ldb + k) / 8));
                 uint64_t c_bit64 = xnor_int64(a_bit64, b_bit64);
 
-#ifdef WIN32
-                int tmp_count = __popcnt64(c_bit64);
-#else
-                int tmp_count = __builtin_popcountll(c_bit64);
-#endif
+                int tmp_count = popcnt_64(c_bit64);
 
                 if (K - k < 64)  tmp_count = tmp_count - (64 - (K - k));    // remove extra bits
                 count += tmp_count;
