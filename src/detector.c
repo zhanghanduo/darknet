@@ -107,7 +107,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
 	args.small_object = net.small_object;
 	args.d = &buffer;
 	args.type = DETECTION_DATA;
-	args.threads = 16;    // 64
+	args.threads = 64;    // 16 or 64
 
 	args.angle = net.angle;
 	args.exposure = net.exposure;
